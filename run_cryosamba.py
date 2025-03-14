@@ -93,7 +93,7 @@ def run_training(gpus: str, exp_name: str) -> None:
     # Build the command string using absolute paths and Python-based GPU count.
     cmd = (
         f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} "
-        f"torchrun --standalone --nproc_per_node={nproc} {train_script} --config {config_path}"
+        f"/programs/x86_64-linux/cryosamba/1.0/miniforge/bin/torchrun --standalone --nproc_per_node={nproc} /programs/x86_64-linux/cryosamba/1.0/cryosamba/train.py --config {config_path}"
     )
     
     rprint("[yellow][bold]!!! Training instructions, read before proceeding !!![/bold][/yellow]")
