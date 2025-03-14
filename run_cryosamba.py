@@ -12,10 +12,24 @@ from loguru import logger
 from rich import print as rprint
 from rich.console import Console
 
+# Import prompt_toolkit for path autocompletion
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.completion import PathCompleter
+
 app = typer.Typer()
 
 RUNS_DIR = os.path.join(os.getcwd(), "runs")
 
+# New helper function for path autocompletion
+def ask_user_path(prompt_text: str, default: Optional[str] = None) -> str:
+    completer = PathCompleter(expanduser=True)
+    full_prompt = f"{prompt_text}"
+    if default:
+        full_prompt += f" [{default}]: "
+    else:
+        full_prompt += ": "
+    result = pt_prompt(full_prompt, completer=completer)
+    return result if result else default
 
 def select_gpus() -> Optional[Union[List[str], int]]:
     simple_header("GPU Selection")
@@ -62,7 +76,6 @@ def select_gpus() -> Optional[Union[List[str], int]]:
 
     return select_gpus
 
-
 def run_training(gpus: str, exp_name: str) -> None:
     config_path = os.path.join(RUNS_DIR, exp_name, "train_config.json")
     cmd = f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} torchrun --standalone --nproc_per_node=$(echo {gpus} | tr ',' '\\n' | wc -l) train.py --config {config_path}"
@@ -87,7 +100,6 @@ def run_training(gpus: str, exp_name: str) -> None:
     else:
         rprint(f"[red]Training aborted[/red]")
 
-
 def run_inference(gpus: str, exp_name: str) -> None:
     config_path = os.path.join(RUNS_DIR, exp_name, "inference_config.json")
     cmd = f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} torchrun --standalone --nproc_per_node=$(echo {gpus} | tr ',' '\\n' | wc -l) inference.py --config {config_path}"
@@ -109,7 +121,6 @@ def run_inference(gpus: str, exp_name: str) -> None:
     else:
         rprint(f"[red]Inference aborted[/red]")
 
-
 def handle_exceptions(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -119,9 +130,7 @@ def handle_exceptions(func):
             typer.echo(f"An error occurred: {str(e)}")
             logger.exception("An exception occurred")
             raise typer.Exit(code=1)
-
     return wrapper
-
 
 @handle_exceptions
 def is_conda_installed() -> bool:
@@ -139,14 +148,12 @@ def is_conda_installed() -> bool:
     except subprocess.CalledProcessError:
         return False
 
-
 @handle_exceptions
 def is_env_active(env_name) -> bool:
     """Use conda env list to check active environments"""
     cmd = "conda env list"
     result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
     return f"{env_name}" in result.stdout
-
 
 def run_command(command, shell=True):
     process = subprocess.Popen(
@@ -161,7 +168,6 @@ def run_command(command, shell=True):
         typer.echo(f"Error executing command: {command}\nError: {error}", err=True)
         logger.error(f"Error executing command: {command}\nError: {error}")
     return output, error
-
 
 @app.command()
 @handle_exceptions
@@ -188,7 +194,6 @@ def setup_conda():
             run_command(
                 'start /wait "" Miniconda3-latest-Windows-x86_64.exe /InstallationType=JustMe /AddToPath=1 /RegisterPython=0 /S /D=%UserProfile%\\Miniconda3'
             )
-
 
 @app.command()
 @handle_exceptions
@@ -221,7 +226,6 @@ def setup_environment(
                 subprocess.run(cmd, shell=True, text=True)
                 break
 
-
 @app.command()
 @handle_exceptions
 def export_env():
@@ -231,10 +235,8 @@ def export_env():
     subprocess.run("mv environment.yml ", shell=True)
     typer.echo("Environment exported and moved to root directory.")
 
-
 def ask_user(prompt: str, default: Any = None) -> Any:
     return typer.prompt(prompt, default=default)
-
 
 def ask_user_int(prompt: str, min_value: int, max_value: int, default: int) -> int:
     while True:
@@ -248,7 +250,6 @@ def ask_user_int(prompt: str, min_value: int, max_value: int, default: int) -> i
                 )
         except ValueError:
             rprint(f"[red]Please enter a valid integer.[/red]")
-
 
 def ask_user_int_multiple(
     prompt: str, min_value: int, max_value: int, multiple: int, default: int
@@ -270,7 +271,6 @@ def ask_user_int_multiple(
         except ValueError:
             rprint(f"[red]Please enter a valid integer.[/red]")
 
-
 def list_tif_files(path):
     files = []
     # List all files and directories in the specified path
@@ -282,17 +282,14 @@ def list_tif_files(path):
             files.append(full_path)
     return files
 
-
 @app.command()
 def generate_experiment(exp_name: str) -> None:
-
     rprint(f"[bold]Setting up new experiment [green]{exp_name}[/green][/bold]")
     rprint(
         f"[bold]Please choose experiment parameters below. Values inside brackets will be chosen by default if you press Enter without providing any input.[/bold]"
     )
 
-    # Offer user option to save config files to a directory of their choice
-    # default to runs/ in current directory if not otherwise specified.
+    # Prompt for a target directory (default: RUNS_DIR)
     target_dir = ask_user("Enter target directory to store experiment configs", RUNS_DIR)
     target_dir = os.path.abspath(target_dir)
     try:
@@ -301,23 +298,23 @@ def generate_experiment(exp_name: str) -> None:
         rprint(f"[red]Error: Could not create target directory {target_dir}: {e}[/red]")
         raise typer.Exit(code=1)
 
-    # Create the configs subdirectory within the target directory
-    # If not writable, try to give user some kind of usable warning
+    # Create the experiment subdirectory within the target directory
     exp_path = os.path.join(target_dir, exp_name)
     try:
         os.makedirs(exp_path, exist_ok=False)
     except Exception as e:
-        rprint(f"[red]Error: Could not create experiment directory; do you have write access to this location?  {exp_path}: {e}[/red]")
+        rprint(f"[red]Error: Could not create experiment directory; do you have write access to this location? {exp_path}: {e}[/red]")
         raise typer.Exit(code=1)
 
     train_dir = os.path.join(exp_path, "train")
     inference_dir = os.path.join(exp_path, "inference")
 
+    # Use ask_user_path to allow tab-completion for file paths
     while True:
         rprint(
             f"\n[bold]DATA PATH[/bold]: The path to a single (3D) .tif, .mrc or .rec file, or the path to a folder containing a sequence of (2D) .tif files, ordered alphanumerically matching the Z-stack order. You can use the full path or a path relative from the CryoSamba folder."
         )
-        data_path = ask_user("Enter your data path", "data/sample_data.rec")
+        data_path = ask_user_path("Enter your data path", "data/sample_data.rec")
         if not os.path.exists(data_path):
             rprint(f"[red]Data path is invalid. Try again.[/red]")
         else:
@@ -346,9 +343,7 @@ def generate_experiment(exp_name: str) -> None:
     rprint(
         f"\n[bold]NUMBER OF ITERATIONS[/bold]: for how many iterations the training session will run. This is an upper limit, and you can halt training before that."
     )
-    num_iters = ask_user_int(
-        "Enter the number of iterations you want to run", 1000, 200000, 50000
-    )
+    num_iters = ask_user_int("Enter the number of iterations you want to run", 1000, 200000, 50000)
     rprint(
         f"\n[bold]BATCH SIZE[/bold]: number of data points passed at once to the GPUs. A higher number leads to faster training, but the whole batch might not fit into your GPU's memory, leading to out-of-memory errors or severe slowdowns. If you're getting these, try to decrease the batch size until they disappear. This number should be an even integer."
     )
@@ -357,28 +352,17 @@ def generate_experiment(exp_name: str) -> None:
     rprint(
         f"\n[bold]MAXIMUM FRAME GAP FOR INFERENCE[/bold]: explained in the manuscript. We recommend using twice the value used for training."
     )
-    inference_max_frame_gap = ask_user_int(
-        "Enter Maximum Frame Gap for Inference", 1, 80, train_max_frame_gap * 2
-    )
+    inference_max_frame_gap = ask_user_int("Enter Maximum Frame Gap for Inference", 1, 80, train_max_frame_gap * 2)
     rprint(
         f"\n[bold]TEST-TIME AUGMENTATION[/bold]: explained in the manuscript. Enabling it leads to slightly better denoising quality at the cost of much longer inference times."
     )
-    tta = typer.confirm(
-        "Enable Test Time Augmentation (TTA) for inference (disabled by default)?",
-        default=False,
-    )
+    tta = typer.confirm("Enable Test Time Augmentation (TTA) for inference (disabled by default)?", default=False)
     rprint(
         f"\n[bold]TRAINING EARLY STOPPING[/bold]: If activated, training will be halted if, starting after 20 epochs, the validation loss doesn't decrease for at least 3 consecutive epochs."
     )
-    early_stopping = typer.confirm(
-        "Enable Early Stopping (disabled by default)?", default=False
-    )
-    rprint(
-        f"\n[yellow][bold]ADVANCED PARAMETERS[/bold]: only recommended for experienced users.[/yellow]"
-    )
-    advanced = typer.confirm(
-        "Do you want to set up advanced parameters (No by default)?", default=False
-    )
+    early_stopping = typer.confirm("Enable Early Stopping (disabled by default)?", default=False)
+    rprint(f"\n[yellow][bold]ADVANCED PARAMETERS[/bold]: only recommended for experienced users.[/yellow]")
+    advanced = typer.confirm("Do you want to set up advanced parameters (No by default)?", default=False)
 
     train_data_patch_shape_y = 256
     train_data_patch_shape_x = 256
@@ -428,21 +412,11 @@ def generate_experiment(exp_name: str) -> None:
 
     if advanced:
         simple_header(f"[yellow] Advanced Parameters [/yellow]")
-        rprint(
-            f"For explanations, refer to the [bold]advanced instructions[/bold] or the [bold]manuscript[/bold]."
-        )
-        train_data_patch_shape_y = ask_user_int_multiple(
-            "Enter train_data.patch_shape on Y", 32, 1024, 32, 256
-        )
-        train_data_patch_shape_x = ask_user_int_multiple(
-            "Enter train_data.patch_shape on X", 32, 1024, 32, 256
-        )
-        train_data_patch_overlap_y = ask_user_int_multiple(
-            "Enter train_data.patch_overlap on Y", 0, 512, 4, 16
-        )
-        train_data_patch_overlap_x = ask_user_int_multiple(
-            "Enter train_data.patch_overlap on X", 0, 512, 4, 16
-        )
+        rprint(f"For explanations, refer to the [bold]advanced instructions[/bold] or the [bold]manuscript[/bold].")
+        train_data_patch_shape_y = ask_user_int_multiple("Enter train_data.patch_shape on Y", 32, 1024, 32, 256)
+        train_data_patch_shape_x = ask_user_int_multiple("Enter train_data.patch_shape on X", 32, 1024, 32, 256)
+        train_data_patch_overlap_y = ask_user_int_multiple("Enter train_data.patch_overlap on Y", 0, 512, 4, 16)
+        train_data_patch_overlap_x = ask_user_int_multiple("Enter train_data.patch_overlap on X", 0, 512, 4, 16)
         train_data_split_ratio = 0.95
         train_data_num_workers = ask_user_int("Enter train_data.num_workers", 0, 512, 4)
 
@@ -460,9 +434,7 @@ def generate_experiment(exp_name: str) -> None:
         optimizer_betas_0 = ask_user("Enter optimizer.betas_0", 0.9)
         optimizer_betas_1 = ask_user("Enter optimizer.betas_1", 0.999)
 
-        biflownet_pyr_dim = ask_user_int_multiple(
-            "Enter biflownet.pyr_dim", 4, 128, 4, 24
-        )
+        biflownet_pyr_dim = ask_user_int_multiple("Enter biflownet.pyr_dim", 4, 128, 4, 24)
         biflownet_pyr_level = ask_user_int("Enter biflownet.pyr_level", 1, 20, 3)
         biflownet_corr_radius = ask_user_int("Enter biflownet.corr_radius", 1, 20, 4)
         biflownet_kernel_size = ask_user_int("Enter biflownet.kernel_size", 1, 20, 3)
@@ -470,27 +442,15 @@ def generate_experiment(exp_name: str) -> None:
         biflownet_padding_mode = ask_user("Enter biflownet.padding_mode", "reflect")
         biflownet_fix_params = ask_user("Enter biflownet.fix_params", False)
 
-        fusionnet_num_channels = ask_user_int_multiple(
-            "Enter fusionnet.num_channels", 4, 128, 4, 16
-        )
+        fusionnet_num_channels = ask_user_int_multiple("Enter fusionnet.num_channels", 4, 128, 4, 16)
         fusionnet_padding_mode = ask_user("Enter fusionnet.padding_mode", "reflect")
         fusionnet_fix_params = ask_user("Enter fusionnet.fix_params", False)
 
-        inference_data_patch_shape_y = ask_user_int_multiple(
-            "Enter inference_data.patch_shape on Y", 32, 1024, 32, 256
-        )
-        inference_data_patch_shape_x = ask_user_int_multiple(
-            "Enter inference_data.patch_shape on Y", 32, 1024, 32, 256
-        )
-        inference_data_patch_overlap_y = ask_user_int_multiple(
-            "Enter inference_data.patch_overlap on Y", 0, 512, 4, 16
-        )
-        inference_data_patch_overlap_x = ask_user_int_multiple(
-            "Enter inference_data.patch_overlap on Y", 0, 512, 4, 16
-        )
-        inference_data_num_workers = ask_user_int(
-            "Enter inference_data.num_workers", 0, 512, 4
-        )
+        inference_data_patch_shape_y = ask_user_int_multiple("Enter inference_data.patch_shape on Y", 32, 1024, 32, 256)
+        inference_data_patch_shape_x = ask_user_int_multiple("Enter inference_data.patch_shape on Y", 32, 1024, 32, 256)
+        inference_data_patch_overlap_y = ask_user_int_multiple("Enter inference_data.patch_overlap on Y", 0, 512, 4, 16)
+        inference_data_patch_overlap_x = ask_user_int_multiple("Enter inference_data.patch_overlap on Y", 0, 512, 4, 16)
+        inference_data_num_workers = ask_user_int("Enter inference_data.num_workers", 0, 512, 4)
 
         inference_output_format = ask_user("Enter inference.output_format", "same")
         inference_pyr_level = ask_user_int("Enter inference.pyr_level", 1, 20, 3)
@@ -551,10 +511,7 @@ def generate_experiment(exp_name: str) -> None:
         "inference_data": {
             "max_frame_gap": inference_max_frame_gap,
             "patch_shape": [inference_data_patch_shape_y, inference_data_patch_shape_x],
-            "patch_overlap": [
-                inference_data_patch_overlap_y,
-                inference_data_patch_overlap_x,
-            ],
+            "patch_overlap": [inference_data_patch_overlap_y, inference_data_patch_overlap_x],
             "batch_size": batch_size,
             "num_workers": inference_data_num_workers,
         },
@@ -579,14 +536,12 @@ def generate_experiment(exp_name: str) -> None:
 
     simple_header(f"Experiment [green]{exp_name}[/green] created")
 
-
 def return_screen() -> None:
     if typer.confirm("Return to main menu?", default=True):
         clear_screen()
         main_menu()
     else:
         exit_screen()
-
 
 def return_screen_exp_manager() -> None:
     if typer.confirm("Return to experiment manager?", default=True):
@@ -595,11 +550,9 @@ def return_screen_exp_manager() -> None:
     else:
         return_screen()
 
-
 def exit_screen() -> None:
     rprint("[bold]Thank you for using CryoSamba. Goodbye![/bold]")
     quit()
-
 
 def title_screen() -> None:
     rprint("")
@@ -634,41 +587,30 @@ def title_screen() -> None:
     rprint("[bold]Arkash Jain[/bold] @ arkash@tklab.hms.harvard.edu")
     rprint("We appreciate all feedback!")
 
-
 def clear_screen() -> None:
     os.system("clear")
 
-
 @app.command()
 def main():
-
     clear_screen()
-
     main_menu()
 
-
 def main_menu() -> None:
-
     title_screen()
-
     rprint(f"\n[bold]*** MAIN MENU ***[/bold]\n")
-
     steps = [
         f"[bold]|1| Manage experiments[/bold]",
         f"[bold]|2| Run training[/bold]",
         f"[bold]|3| Run inference[/bold]",
         f"[bold]|4| Exit[/bold]",
     ]
-
     if not os.path.exists(RUNS_DIR):
         os.makedirs(RUNS_DIR)
     exp_list = list_non_hidden_files(RUNS_DIR)
     if len(exp_list) == 0:
         steps[0] = f"[bold]|1| Manage experiments [red](start here!)[/red][/bold]"
-
     for step in steps:
         rprint(step)
-
     print("")
     while True:
         input_cmd = typer.prompt("Choose an option [1/2/3/4]")
@@ -690,27 +632,20 @@ def main_menu() -> None:
         else:
             rprint("[red]Invalid option. Please choose either 1, 2, 3 or 4.[/red]")
 
-
 def simple_header(message) -> None:
     rprint(f"\n[bold]*** {message} ***[/bold]\n")
 
-
 def setup_cryosamba() -> None:
     simple_header("CryoSamba Setup")
-
     if typer.confirm("Do you want to setup Conda?"):
         setup_conda()
-
     if typer.confirm("Do you want to setup the environment?"):
         env_name = typer.prompt("Enter environment name", default="cryosamba")
         setup_environment(env_name)
-
     if typer.confirm("Do you want to export the environment? (Optional)"):
         export_env()
-
     rprint("[green]CryoSamba setup finished[/green]")
     return_screen()
-
 
 def show_exp_list() -> None:
     rprint(f"Your experiments are stored at [bold]{RUNS_DIR}[/bold]")
@@ -720,22 +655,17 @@ def show_exp_list() -> None:
     else:
         rprint(f"You have the following experiments: [bold]{sorted(exp_list)}[/bold]")
 
-
 def experiment_menu() -> None:
     simple_header("Experiment Manager")
-
     show_exp_list()
-
     steps = [
         f"[bold]|1| Create a new experiment[/bold]",
         f"[bold]|2| Delete an experiment[/bold]",
         f"[bold]|3| Return to Main Menu[/bold]",
     ]
-
     print("")
     for step in steps:
         rprint(step)
-
     print("")
     while True:
         input_cmd = typer.prompt("Choose an option [1/2/3]")
@@ -758,82 +688,59 @@ def experiment_menu() -> None:
         else:
             rprint("[red]Invalid option. Please choose either 1, 2 or 3.[/red]")
 
-
 def setup_experiment() -> None:
     simple_header("New Experiment Setup")
-
     while True:
-        exp_name = typer.prompt(
-            "Please enter the new experiment name (or enter E to Exit)"
-        )
+        exp_name = typer.prompt("Please enter the new experiment name (or enter E to Exit)")
         if exp_name == "E":
             break
         exp_path = os.path.join(RUNS_DIR, exp_name)
         if os.path.exists(exp_path):
-            rprint(
-                f"[red]Experiment [bold]{exp_name}[/bold] already exists. Please choose a new name.[/red]"
-            )
+            rprint(f"[red]Experiment [bold]{exp_name}[/bold] already exists. Please choose a new name.[/red]")
         else:
             generate_experiment(exp_name)
             break
     return_screen_exp_manager()
 
-
 def delete_experiment() -> None:
     simple_header("Experiment Deletion (be careful!)")
-
     while True:
         show_exp_list()
-        exp_name = typer.prompt(
-            "Please enter the name of the experiment you want to delete (or enter E to Exit)"
-        )
+        exp_name = typer.prompt("Please enter the name of the experiment you want to delete (or enter E to Exit)")
         if exp_name == "E":
             break
         exp_path = os.path.join(RUNS_DIR, exp_name)
         if not os.path.exists(exp_path):
-            rprint(
-                f"[red]Experiment [bold]{exp_name}[/bold] not found. Please check the experiment name and try again.[/red]"
-            )
+            rprint(f"[red]Experiment [bold]{exp_name}[/bold] not found. Please check the experiment name and try again.[/red]")
         else:
             rprint(f"Experiment [bold]{exp_name}[/bold] found.")
-            if typer.confirm(
-                f"Do you really want to delete experiment {exp_name} and all its contents (config files, trained models, denoised results)?"
-            ):
+            if typer.confirm(f"Do you really want to delete experiment {exp_name} and all its contents (config files, trained models, denoised results)?"):
                 shutil.rmtree(exp_path)
                 rprint(f"Experiment [bold]{exp_name}[/bold] successfully deleted.")
     return_screen_exp_manager()
-
 
 def list_non_hidden_files(path):
     non_hidden_files = [file for file in os.listdir(path) if not file.startswith(".")]
     return non_hidden_files
 
-
 def run_cryosamba(mode) -> None:
     simple_header(f"CryoSamba {mode}")
-
     if not os.path.exists(RUNS_DIR):
         os.makedirs(RUNS_DIR)
-
     rprint(f"Your experiments are stored at [bold]{RUNS_DIR}[/bold]")
     exp_list = list_non_hidden_files(RUNS_DIR)
     if len(exp_list) == 0:
-        rprint(
-            f"[red]You have no existing experiments. Set up a new experiment via the main menu.[/red]"
-        )
+        rprint(f"[red]You have no existing experiments. Set up a new experiment via the main menu.[/red]")
         return_screen()
     else:
         rprint(f"You have the following experiments: [bold]{sorted(exp_list)}[/bold]")
-
     while True:
         exp_name = typer.prompt("Please enter the experiment name (or enter E to Exit)")
         if exp_name == "E":
             break
         exp_path = os.path.join(RUNS_DIR, exp_name)
         if not os.path.exists(exp_path):
-            rprint(
-                f"[red]Experiment [bold]{exp_name}[/bold] not found. Please check the experiment name and try again.[/red]"
-            )
+            rprint(f"[red]Experiment [bold]{exp_name}[/bold] not found. Please check the experiment name and try again.[/red]")
         else:
             rprint(f"* Experiment [green]{exp_name}[/green] selected *")
             selected_gpus = select_gpus()
@@ -843,9 +750,26 @@ def run_cryosamba(mode) -> None:
                 elif mode == "Inference":
                     run_inference(",".join(selected_gpus), exp_name)
             break
-
     return_screen()
 
+def return_screen() -> None:
+    if typer.confirm("Return to main menu?", default=True):
+        clear_screen()
+        main_menu()
+    else:
+        exit_screen()
+
+def return_screen_exp_manager() -> None:
+    if typer.confirm("Return to experiment manager?", default=True):
+        clear_screen()
+        experiment_menu()
+    else:
+        return_screen()
+
+def exit_screen() -> None:
+    rprint("[bold]Thank you for using CryoSamba. Goodbye![/bold]")
+    quit()
 
 if __name__ == "__main__":
     typer.run(main)
+
