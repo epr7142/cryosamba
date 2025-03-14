@@ -76,50 +76,67 @@ def select_gpus() -> Optional[Union[List[str], int]]:
 
     return select_gpus
 
+
+
+
 def run_training(gpus: str, exp_name: str) -> None:
+    # Build the config path (assumed to be set up in RUNS_DIR)
     config_path = os.path.join(RUNS_DIR, exp_name, "train_config.json")
-    cmd = f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} torchrun --standalone --nproc_per_node=$(echo {gpus} | tr ',' '\\n' | wc -l) train.py --config {config_path}"
-    rprint(
-        f"[yellow][bold]!!! Training instructions, read before proceeding !!![/bold][/yellow]"
+    
+    # Construct a absolute path to train.py for better portability
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    train_script = os.path.join(repo_dir, "train.py")
+    
+    # Count the number of GPUs from the comma-separated list.
+    nproc = len(gpus.split(","))
+    
+    # Build the command string using absolute paths and Python-based GPU count.
+    cmd = (
+        f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} "
+        f"torchrun --standalone --nproc_per_node={nproc} {train_script} --config {config_path}"
     )
-    rprint(
-        f"[bold]* You can interrupt training at any time by pressing CTRL + C, and you can resume it later by running CryoSamba again *[/bold]"
-    )
-    rprint(
-        f"[bold]* Training will run until your specified maximum number of iterations is reached. However, you can monitor the training and validation losses and halt training when you think they have converged/stabilized * [/bold]"
-    )
-    rprint(
-        f"[bold]* You can monitor the losses through here, through the .log file in the experiment training folder, or through TensorBoard (see README on how to run it) *[/bold] \n"
-    )
-    rprint(
-        f"[bold]* The output of the training run will be checkpoint files containing the trained model weights. There is no denoised data output at this point yet. You can used the trained model weights to run inference on your data and then get the denoised outputs. *[/bold] \n"
-    )
+    
+    rprint("[yellow][bold]!!! Training instructions, read before proceeding !!![/bold][/yellow]")
+    rprint("[bold]* You can interrupt training at any time by pressing CTRL + C, and you can resume it later by running CryoSamba again *[/bold]")
+    rprint("[bold]* Training will run until your specified maximum number of iterations is reached. However, you can monitor the training and validation losses and halt training when you think they have converged/stabilized *[/bold]")
+    rprint("[bold]* You can monitor the losses through here, through the .log file in the experiment training folder, or through TensorBoard (see README on how to run it) *[/bold] \n")
+    rprint("[bold]* The output of the training run will be checkpoint files containing the trained model weights. There is no denoised data output at this point yet. You can use the trained model weights to run inference on your data and then get the denoised outputs. *[/bold] \n")
+    
     if typer.confirm("Do you want to start training?"):
-        rprint(f"\n[blue]***********************************************[/blue]\n")
+        rprint("\n[blue]***********************************************[/blue]\n")
         subprocess.run(cmd, shell=True, text=True)
     else:
-        rprint(f"[red]Training aborted[/red]")
+        rprint("[red]Training aborted[/red]")
+
 
 def run_inference(gpus: str, exp_name: str) -> None:
+    # Build the config path for inference.
     config_path = os.path.join(RUNS_DIR, exp_name, "inference_config.json")
-    cmd = f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} torchrun --standalone --nproc_per_node=$(echo {gpus} | tr ',' '\\n' | wc -l) inference.py --config {config_path}"
-    rprint(
-        f"[yellow][bold]!!! Inference instructions, read before proceeding !!![/bold][/yellow]"
+    
+    # Construct an absolute path to inference.py for better portability.
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    inference_script = os.path.join(repo_dir, "inference.py")
+    
+    # Count the number of GPUs from the comma-separated list.
+    nproc = len(gpus.split(","))
+    
+    # Build the command string with absolute paths.
+    cmd = (
+        f"OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES={gpus} "
+        f"torchrun --standalone --nproc_per_node={nproc} {inference_script} --config {config_path}"
     )
-    rprint(
-        f"[bold]* You can interrupt inference at any time by pressing CTRL + C, and you can resume it later by running CryoSamba again *[/bold]"
-    )
-    rprint(
-        f"[bold]* You should have previously run a training session on this experiment in order to run inference * [/bold]"
-    )
-    rprint(
-        f"[bold]* The denoised volume will be generated after the final iteration * [/bold] \n"
-    )
+    
+    rprint("[yellow][bold]!!! Inference instructions, read before proceeding !!![/bold][/yellow]")
+    rprint("[bold]* You can interrupt inference at any time by pressing CTRL + C, and you can resume it later by running CryoSamba again *[/bold]")
+    rprint("[bold]* You should have previously run a training session on this experiment in order to run inference *[/bold]")
+    rprint("[bold]* The denoised volume will be generated after the final iteration *[/bold] \n")
+    
     if typer.confirm("Do you want to start inference?"):
-        rprint(f"\n[blue]***********************************************[/blue]\n")
+        rprint("\n[blue]***********************************************[/blue]\n")
         subprocess.run(cmd, shell=True, text=True)
     else:
-        rprint(f"[red]Inference aborted[/red]")
+        rprint("[red]Inference aborted[/red]")
+
 
 def handle_exceptions(func):
     @wraps(func)
