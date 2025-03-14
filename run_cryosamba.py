@@ -291,20 +291,33 @@ def generate_experiment(exp_name: str) -> None:
         f"[bold]Please choose experiment parameters below. Values inside brackets will be chosen by default if you press Enter without providing any input.[/bold]"
     )
 
-    exp_path = os.path.join(RUNS_DIR, exp_name)
+    # Offer user option to save config files to a directory of their choice
+    # default to runs/ in current directory if not otherwise specified.
+    target_dir = ask_user("Enter target directory to store experiment configs", RUNS_DIR)
+    target_dir = os.path.abspath(target_dir)
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except Exception as e:
+        rprint(f"[red]Error: Could not create target directory {target_dir}: {e}[/red]")
+        raise typer.Exit(code=1)
 
-    # Common parameters
-    train_dir = f"{exp_path}/train"
-    inference_dir = f"{exp_path}/inference"
+    # Create the configs subdirectory within the target directory
+    # If not writable, try to give user some kind of usable warning
+    exp_path = os.path.join(target_dir, exp_name)
+    try:
+        os.makedirs(exp_path, exist_ok=False)
+    except Exception as e:
+        rprint(f"[red]Error: Could not create experiment directory; do you have write access to this location?  {exp_path}: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    train_dir = os.path.join(exp_path, "train")
+    inference_dir = os.path.join(exp_path, "inference")
 
     while True:
         rprint(
             f"\n[bold]DATA PATH[/bold]: The path to a single (3D) .tif, .mrc or .rec file, or the path to a folder containing a sequence of (2D) .tif files, ordered alphanumerically matching the Z-stack order. You can use the full path or a path relative from the CryoSamba folder."
         )
-        data_path = ask_user(
-            "Enter your data path",
-            f"data/sample_data.rec",
-        )
+        data_path = ask_user("Enter your data path", "data/sample_data.rec")
         if not os.path.exists(data_path):
             rprint(f"[red]Data path is invalid. Try again.[/red]")
         else:
