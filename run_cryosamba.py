@@ -104,6 +104,9 @@ def run_training(gpus: str, exp_name: str) -> None:
     
     if typer.confirm("Do you want to start training?"):
         rprint("\n[blue]***********************************************[/blue]\n")
+        #Adding in some extra visibility
+        rprint(f"\n[blue]Executing command:\n[white on black]{cmd}[/white on black]\n[/blue]")
+        
         subprocess.run(cmd, shell=True, text=True)
     else:
         rprint("[red]Training aborted[/red]")
